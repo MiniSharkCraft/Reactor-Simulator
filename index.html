@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ReactorSim — Fail or Chill</title>
+<style>
+  :root{
+    --bg:#0b0b10; --panel:#0f1115; --muted:#9aa3af; --accent:#ff6b6b; --ok:#48c774;
+    --glass: rgba(255,255,255,0.03);
+  }
+  *{box-sizing:border-box;font-family:Inter,Segoe UI,Roboto,Arial}
+  body{margin:0;background:linear-gradient(180deg,#06060a,#0b0b10);color:#e6eef6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{width:980px;background:var(--panel);border-radius:12px;padding:18px;box-shadow:0 6px 30px rgba(0,0,0,0.6)}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  header h1{margin:0;font-size:20px}
+  .top{display:flex;gap:14px}
+  .controls{width:360px;background:var(--glass);padding:12px;border-radius:10px}
+  .status{flex:1;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:12px;border-radius:10px}
+  .row{display:flex;gap:10px;margin-bottom:10px;align-items:center}
+  label{font-size:13px;color:var(--muted)}
+  input[type=range]{width:100%}
+  .btn{background:var(--accent);border:none;padding:10px 12px;border-radius:8px;color:#081018;cursor:pointer;font-weight:700}
+  .danger{background:#ff8b8b}
+  .big{font-size:28px;font-weight:700}
+  .meter{display:flex;gap:10px;flex-wrap:wrap}
+  .meter > div{flex:1;min-width:140px;padding:8px;border-radius:8px;background:rgba(0,0,0,0.25);text-align:center}
+  .log{height:120px;overflow:auto;background:#040406;padding:8px;border-radius:8px;font-family:monospace;font-size:12px}
+  .footer{margin-top:10px;color:var(--muted);font-size:13px}
+  .danger-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff3b3b;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="card">
+  <header>
+    <div style="width:48px;height:48px;background:#0b1020;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800">☢️</div>
+    <div>
+      <h1>ReactorSim — Playground</h1>
+      <div style="color:var(--muted);font-size:13px">Mô phỏng giáo dục. Thao tác khôn ngoan, hoặc chết cách ảo.</div>
+    </div>
+  </header>
+
+  <div class="top">
+    <div class="controls">
+      <div class="row"><label>Control Rod (điều khiển neutron)</label></div>
+      <div class="row"><input id="rod" type="range" min="0" max="100" value="40"></div>
+
+      <div class="row"><label>Coolant Pump (bơm nước)</label></div>
+      <div class="row">
+        <button id="pumpToggle" class="btn">ON</button>
+        <div style="flex:1;text-align:right;color:var(--muted)">Pump efficiency: <span id="pumpEff">1.0</span>x</div>
+      </div>
+
+      <div class="row"><label>Turbine Load (lấy điện)</label></div>
+      <div class="row"><input id="load" type="range" min="0" max="100" value="35"></div>
+
+      <div class="row" style="margin-top:8px">
+        <button id="scram" class="btn danger">SCRAM (Emergency)</button>
+        <button id="reset" class="btn" style="background:#2b6cff;color:white">Restart</button>
+      </div>
+
+      <div style="margin-top:10px">
+        <label>Mode</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="mode btn" data-mode="tutorial" style="background:#9be7ff">Tutorial</button>
+          <button class="mode btn" data-mode="normal">Normal</button>
+          <button class="mode btn" data-mode="hard">Hard</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="status">
+      <div class="meter">
+        <div>
+          <div style="color:var(--muted)">Reactor Power</div>
+          <div id="power" class="big">0 %</div>
+        </div>
+        <div>
+          <div style="color:var(--muted)">Core Temp</div>
+          <div id="temp" class="big">25 °C</div>
+        </div>
+        <div>
+          <div style="color:var(--muted)">Neutron Level</div>
+          <div id="neut" class="big">0.00</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;display:flex;gap:10px">
+        <div style="flex:1">
+          <div style="color:var(--muted)">Decay Heat</div>
+          <div id="decay" class="big">0 %</div>
+        </div>
+        <div style="width:200px">
+          <div style="color:var(--muted)">Status</div>
+          <div id="status" class="big">OFF</div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="danger-dot" id="alarm" style="background:#333"></div>
+          <div style="color:var(--muted)">Event Log</div>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+
+      <div class="footer">
+        Lưu ý: mô phỏng đơn giản hóa. Không áp dụng cho thế giới thật. Độ trễ cơ khí và rủi ro ngẫu nhiên sẽ xuất hiện ở mode Hard.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ReactorSim — simplified model, dt step loop */
+const rod = document.getElementById('rod');
+const load = document.getElementById('load');
+const pumpToggle = document.getElementById('pumpToggle');
+const pumpEffSpan = document.getElementById('pumpEff');
+const powerEl = document.getElementById('power');
+const tempEl = document.getElementById('temp');
+const neutEl = document.getElementById('neut');
+const decayEl = document.getElementById('decay');
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+const alarmDot = document.getElementById('alarm');
+const scramBtn = document.getElementById('scram');
+const resetBtn = document.getElementById('reset');
+const modes = document.querySelectorAll('.mode');
+
+let mode = 'normal';
+modes.forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode; addLog('Mode='+mode); modes.forEach(x=>x.style.opacity=0.6); b.style.opacity=1;}));
+modes[1].style.opacity=1; // normal
+
+let pumpOn = true;
+let pumpEff = 1.0;
+pumpToggle.onclick = ()=>{
+  pumpOn = !pumpOn;
+  pumpToggle.textContent = pumpOn ? 'ON' : 'OFF';
+  pumpToggle.style.background = pumpOn ? 'var(--accent)' : 'grey';
+  addLog('Pump toggled: '+(pumpOn?'ON':'OFF'));
+};
+
+scramBtn.onclick = ()=>{ doSCRAM(); addLog('SCRAM pressed!'); };
+resetBtn.onclick = ()=>{ init(); addLog('Reset simulation'); };
+
+let state = {};
+function init(){
+  state = {
+    neutron: 0.02,       // arbitrary neutrons / norm
+    power: 0.0,          // %
+    temp: 25,            // °C
+    decay: 0.0,          // %
+    running: false,
+    meltdown: false,
+    time:0,
+  };
+  pumpOn = true; pumpEff = 1.0;
+  pumpToggle.textContent = 'ON'; pumpToggle.style.background='var(--accent)';
+  alarmDot.style.background='#333';
+  updateUI();
+  logEl.innerHTML='';
+  addLog('Simulation ready — mode: '+mode);
+}
+init();
+
+/* helper */
+function addLog(t){ const s = '['+new Date().toLocaleTimeString()+'] '+t; logEl.innerHTML = s + '<\n>' + logEl.innerHTML; }
+
+/* SCRAM: force rods to 100% inserted (rod value -> 100 reduces neutrons) */
+function doSCRAM(){
+  rod.value = 100;
+  state.neutron *= 0.02; // big drop
+  state.power *= 0.1;
+  addLog('SCRAM executed: control rods full in.');
+}
+
+/* Simple physics step (completely fictional! educational only) */
+function step(dt){
+  if(state.meltdown) return;
+  state.time += dt;
+  // control influence: rod insertion reduces fission rate
+  const rodInsertion = rod.value / 100; // 0..1
+  const rodEffect = 1 - 0.98*rodInsertion; // if rods fully in -> nearly kills fission
+
+  // pump effect
+  pumpEff = pumpOn ? 1.0 : 0.0;
+  // mode: introduce random failures
+  if(mode==='hard' && Math.random() < 0.001*dt) {
+    // random pump failure toggle
+    pumpOn = !pumpOn; pumpToggle.textContent = pumpOn?'ON':'OFF';
+    addLog('Random pump event: '+(pumpOn?'restarted':'failed'));
+  }
+
+  // neutron dynamics (toy): neutron grows with rodEffect and decreases by absorption (pump helps coolant stability)
+  // step-by-step calc:
+  const neutGen = (1.0 - rodEffect) * 0.5; // more rod out -> more gen
+  const neutLoss = 0.2 + 0.4 * pumpEff;
+  // delta neutron per second
+  const dNeut = (neutGen - neutLoss * state.neutron) * dt * 0.5;
+  state.neutron = Math.max(0, state.neutron + dNeut);
+
+  // power approximates proportionally to neutron level and turbine load (load reduces heat)
+  const targetPower = Math.min(100, state.neutron * 200 * (1 - 0.002*load.value));
+  // smooth power
+  state.power += (targetPower - state.power) * Math.min(1, dt*0.5);
+
+  // temperature dynamics:
+  // fission adds heat ~ power, pump removes heat proportional to pumpEff
+  const heatFromFission = state.power * 0.6 * dt;
+  const heatRemoval = (pumpEff*1.2 + 0.5*(load.value/100)) * dt; // turbine load removes some heat into grid
+  // decay heat always contributes a bit
+  const decayHeatAdd = state.decay * 0.1 * dt;
+  // update temp (toy)
+  state.temp += heatFromFission + decayHeatAdd - heatRemoval;
+  // ambient cool
+  state.temp += (25 - state.temp) * 0.01 * dt;
+
+  // decay heat increases slowly when power has been high recently
+  const decayTarget = Math.min(100, state.power * 0.1);
+  state.decay += (decayTarget - state.decay) * 0.01 * dt;
+
+  // if neutron skyrockets (prompt-critical imitation) - rare event if rods very out and neutron high
+  if(state.neutron > 5.0 && rodInsertion < 0.05 && Math.random() < 0.2*dt){
+    // prompt surge
+    addLog('PROMPT SURGE! Neutron spike!');
+    state.neutron *= 1.5;
+    state.power += 30;
+    state.temp += 150 * dt;
+  }
+
+  // meltdown condition (toy thresholds)
+  if(state.temp > 1000 || state.decay > 120) {
+    triggerMeltdown();
+  } else if(state.temp > 600) {
+    alarmDot.style.background = '#ff3b3b';
+    statusEl.textContent = 'CRITICAL';
+  } else if(state.power > 0.5) {
+    alarmDot.style.background = '#48c774';
+    statusEl.textContent = 'RUNNING';
+  } else {
+    alarmDot.style.background = '#333';
+    statusEl.textContent = 'IDLE';
+  }
+
+  updateUI();
+}
+
+function triggerMeltdown(){
+  state.meltdown = true;
+  addLog('=== MELTDOWN 🤯 === Reactor core breached. Game over.');
+  statusEl.textContent = 'MELTDOWN';
+  alarmDot.style.background = '#ff3b3b';
+  // visual flash
+  document.body.style.background = 'radial-gradient(circle at 30% 20%, #fff 0%, #8ff 10%, #021 40%)';
+  setTimeout(()=>document.body.style.background='linear-gradient(180deg,#06060a,#0b0b10)',3000);
+}
+
+function updateUI(){
+  powerEl.textContent = Math.round(state.power) + ' %';
+  tempEl.textContent = Math.round(state.temp) + ' °C';
+  neutEl.textContent = state.neutron.toFixed(2);
+  decayEl.textContent = Math.round(state.decay) + ' %';
+  pumpEffSpan.textContent = pumpEff.toFixed(2);
+}
+
+/* main loop */
+let last = performance.now();
+function loop(t){
+  const dt = Math.min(0.5, (t-last)/1000);
+  last = t;
+  step(dt);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
